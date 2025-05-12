@@ -1,115 +1,124 @@
-using UnityEngine;
-using TMPro; // Add this for TextMeshPro
+﻿using UnityEngine;
+using UnityEngine.XR;
+using TMPro;
+using System.Collections;
 
 public class GameManager : MonoBehaviour
 {
-    public static GameManager Instance { get; private set; } // Singleton pattern
+    [Header("UI")]
+    public TextMeshProUGUI scoreText;
+    public TextMeshProUGUI timerText;
+    public TextMeshProUGUI hintText;          // optional
 
-    public TextMeshProUGUI scoreText; // Assign ScoreText in Inspector
-    public TextMeshProUGUI timerText; // Assign TimerText in Inspector
-    public BallSpawner ballSpawner; // Assign BallSpawner GameObject in Inspector
+    [Header("Gameplay")]
+    public arcSpawner ballSpawner;
+    public float preRoundDelay = 3f;
+    public float roundDuration = 60f;
 
-    public float gameDuration = 0.0f;
+    int score;
+    float timeLeft;
+    bool roundRunning;
 
-    private int score = 0;
-    private float currentTime;
-    private bool gameRunning = false;
+    /* ---------- SINGLETON (keeps IncrementScore() simple) ---------- */
+    public static GameManager Instance { get; private set; }
 
     void Awake()
     {
-        // Simple Singleton setup
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-        }
-        else
-        {
-            Instance = this;
-        }
+        if (Instance && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
     }
 
-    void Start()
-    {
-        // Initialize UI
-        UpdateScoreUI();
-        currentTime = gameDuration;
-        UpdateTimerUI();
+    void Start() => StartCoroutine(GameLoop());
 
-        // Start the game automatically (or trigger it via button press etc.)
-        StartGame();
-    }
-
-    void Update()
+    /* ---------- MAIN LOOP ---------- */
+    IEnumerator GameLoop()
     {
-        if (gameRunning)
+        // 1. fade-in music once when app launches
+        FindFirstObjectByType<player>()?.PlayLoop();
+
+        while (true)                    // endless sessions
         {
-            currentTime -= Time.deltaTime;
-            if (currentTime <= 0)
+            yield return Countdown(preRoundDelay);   // 2. countdown
+
+            StartRound();                              // 3.
+            while (timeLeft > 0f)                      // 3a. tick timer
             {
-                EndGame();
+                timeLeft -= Time.deltaTime;
+                UpdateTimerUI();
+                yield return null;
             }
-            UpdateTimerUI();
+            EndRound();                                // 3b.
+
+            hintText?.SetText("Pull right trigger to restart");
+            yield return WaitForTrigger();             // 4.
+            hintText?.SetText(string.Empty);
         }
     }
 
-    public void StartGame()
+    /* ---------- ROUND CONTROL ---------- */
+    void StartRound()
     {
         score = 0;
-        currentTime = gameDuration;
-        gameRunning = true;
+        timeLeft = roundDuration;
+        roundRunning = true;
         UpdateScoreUI();
         UpdateTimerUI();
-
-        if (ballSpawner != null)
-        {
-            ballSpawner.StartSpawning();
-        }
-        else
-        {
-            Debug.LogError("GameManager needs a reference to the BallSpawner!");
-        }
-
-        Debug.Log("Game Started!");
+        ballSpawner?.StartSpawning();   // ArcSpawner already has these
     }
 
-    public void EndGame()
+    void EndRound()
     {
-        gameRunning = false;
-        currentTime = 0;
-        UpdateTimerUI();
-
-        if (ballSpawner != null)
-        {
-            ballSpawner.StopSpawning();
-        }
-
-        Debug.Log($"Game Over! Final Score: {score}");
-        // Add logic for game over screen, restart button, etc. here
+        roundRunning = false;
+        ballSpawner?.StopSpawning();
     }
-
 
     public void IncrementScore()
     {
-        if (!gameRunning) return; // Don't score if game isn't running
-
+        if (!roundRunning) return;
         score++;
         UpdateScoreUI();
     }
 
-    void UpdateScoreUI()
+    /* ---------- UI HELPERS ---------- */
+    IEnumerator Countdown(float secs)
     {
-        if (scoreText != null)
+        for (float t = secs; t > 0f; t -= 1f)
         {
-            scoreText.text = "Score: " + score;
+            timerText?.SetText(Mathf.CeilToInt(t).ToString("0"));
+            yield return new WaitForSeconds(1f);
         }
+        timerText?.SetText(string.Empty);
     }
 
-    void UpdateTimerUI()
+    void UpdateScoreUI() => scoreText?.SetText($"Score: {score}");
+    void UpdateTimerUI() => timerText?.SetText($"Time: {Mathf.Max(0, Mathf.CeilToInt(timeLeft)):00}");
+
+    /* ---------- RESTART INPUT (no obsolete API) ---------- */
+    IEnumerator WaitForTrigger()
     {
-        if (timerText != null)
+        InputDevice rightHand = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);  // gets / updates a device :contentReference[oaicite:0]{index=0}
+        bool prevState = false;
+
+        while (true)
         {
-            // Format time nicely (e.g., 00)
-            timerText.text = "Time: " + Mathf.Max(0, Mathf.CeilToInt(currentTime)).ToString("00");
+            // In play-mode a controller can reconnect; refresh if needed
+            if (!rightHand.isValid)                       // validity test :contentReference[oaicite:1]{index=1}
+                rightHand = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+
+            if (rightHand.TryGetFeatureValue(CommonUsages.triggerButton, out bool pressed) && pressed)   // feature query :contentReference[oaicite:2]{index=2}
+            {
+                if (!prevState) break;    // trigger was just pressed
+                prevState = true;
+            }
+            else
+            {
+                prevState = false;
+            }
+
+#if UNITY_EDITOR        // convenience: hit Space in the editor
+            if (UnityEngine.Input.GetKeyDown(KeyCode.Space)) break;
+#endif
+            yield return null;
         }
     }
 }

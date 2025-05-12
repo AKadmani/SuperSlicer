@@ -149,7 +149,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aa0c598fa94282647938178e5555a00b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ballHalfPrefab: {fileID: 1729547113833260087, guid: e64cf9e37aa0d0049ae5517d2c652ce3, type: 3}
+  crossSectionMaterial: {fileID: 2100000, guid: 1e73eecbd648fb54d957f073383e8d39, type: 2}
   despawnDelayGround: 2
   cutForceMagnitude: 5
   despawnDelayCut: 3
